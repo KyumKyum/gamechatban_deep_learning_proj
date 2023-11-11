@@ -12,7 +12,7 @@ setwd("~/Desktop/Dev/HYU/2023-02/AI-X/project/gamechatban") # Change this value 
 chatlogs <- read.csv("./chatlogs.csv")
 
 # Pre-Processing Steps; Feature Engineering Pipeline for the chatlogs. 
-# 1. Grammatical Expression Removal:
+# 1. Grammatical & Game-specific Expression Removal:
   # Remove common grammatical expressions like "is" and "are" to enhance the validity of the analysis.
 # 2. Feature Engineering - Severity:
   # Introduce a new feature called 'severity' based on the total number of case reports.
@@ -24,8 +24,17 @@ chatlogs <- read.csv("./chatlogs.csv")
   # Concatenate chatlogs within each group into a single text.
   # Chatlogs will be merged into a single column for each most common reported reason, considering the newly defined 'severity' feature.
 
-# Step 1: Gramatical Expression Removal: Used gsub and REGEX to do such task.
-chatlogs$message <- gsub("\\b(?:is|are|&gt|&lt|was|were)\\b", "", chatlogs$message, ignore.case = TRUE)
+# Step 1: Gramatical Game-specific Expression Removal: Used gsub and REGEX to do such task.
+# Read champion names
+champion_names <- read.csv("./champion_names.csv")
+# Create a regex pattern for both grammatical expressions and champion names/abbreviations
+pattern <- paste0("\\b(?:is|are|&gt|&lt|was|were|", paste(unique(c(champion_names$Champion, champion_names$Abbreviation)), collapse = "|"), ")\\b")
+
+# Remove both grammatical expressions and champion names/abbreviations from chatlogs$message
+chatlogs$message <- gsub(pattern, "", chatlogs$message, ignore.case = TRUE)
+
+# Export into csv for later use. (Pre-processed.csv)
+write.csv(chatlogs, "processed.csv")
 
 # Step 2:  Feature Engineering - Severity
 chatlogs$severity <- cut( # Categorize numbers into factors.
