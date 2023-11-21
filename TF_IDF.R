@@ -12,19 +12,26 @@ setwd("~/Desktop/Dev/HYU/2023-02/AI-X/project/gamechatban") # Change this value 
 chatlogs <- read.csv("./chatlogs.csv")
 
 # Pre-Processing Steps; Feature Engineering Pipeline for the chatlogs. 
-# 1. Grammatical & Game-specific Expression Removal:
+# 1. Pruning
+  # Select only tuples where association_to_offender = offender.
+# 2. Grammatical & Game-specific Expression Removal:
   # Remove common grammatical expressions like "is" and "are" to enhance the validity of the analysis.
-# 2. Feature Engineering - Severity:
+# 3. Feature Engineering - Severity:
   # Introduce a new feature called 'severity' based on the total number of case reports.
   # Total case report <= 3: Severe
   # Total Case Report >= 4 && <= 6: Normal
   # Total Case Report >= 7: Low
-# 3. Concatenation of Chatlogs:
+# 4. Concatenation of Chatlogs:
   # Group chatlogs based on the common reported reason.
   # Concatenate chatlogs within each group into a single text.
   # Chatlogs will be merged into a single column for each most common reported reason, considering the newly defined 'severity' feature.
 
-# Step 1: Gramatical Game-specific Expression Removal: Used gsub and REGEX to do such task.
+# Step 1: Pruning: Select only offender's chatlog.
+chatlogs <- chatlogs %>% filter(association_to_offender == 'offender')
+# Remove not-required column (association_to_offender: All columns will be offender)
+chatlogs <- subset(chatlogs, select = -association_to_offender)
+
+# Step 2: Gramatical Game-specific Expression Removal: Used gsub and REGEX to do such task.
 # Read champion names
 champion_names <- read.csv("./champion_names.csv")
 # Create a regex pattern for both grammatical expressions and champion names/abbreviations
@@ -36,7 +43,7 @@ chatlogs$message <- gsub(pattern, "", chatlogs$message, ignore.case = TRUE)
 # Export into csv for later use. (Pre-processed.csv)
 write.csv(chatlogs, "processed.csv")
 
-# Step 2:  Feature Engineering - Severity
+# Step 3:  Feature Engineering - Severity
 chatlogs$severity <- cut( # Categorize numbers into factors.
   chatlogs$case_total_reports,
   breaks = c(-Inf, 3, 6, Inf),
@@ -44,11 +51,13 @@ chatlogs$severity <- cut( # Categorize numbers into factors.
   include.lowest = TRUE
 )
 
-# Step 3: Concatenation of Chatlogs
+# Step 4: Concatenation of Chatlogs
 concatenated <- chatlogs %>%
   group_by(most_common_report_reason, severity) %>% #Group by following two category
   summarise(concatenated_text = paste(message, collapse = " ")) %>%
   ungroup()
+
+write.csv(concatenated, "concat.csv")
 
 # TF-IDF (Term-Frequency Inverse Document Frequency) Matrix Anaylsis; Process TF-IDF for each concatenated text to get 'toxiticy level of each words'.
 # 1. Create a corpus for TF-IDF, pre-process it.
@@ -80,10 +89,40 @@ tf_idf_col_name <- paste(concatenated$most_common_report_reason, concatenated$se
 colnames(tf_idf) <- tf_idf_col_name
 
 # Scale up and Round the values
-tf_idf <- round((tf_idf * 10000), 2)
+tf_idf <- round((tf_idf * 1000), 2)
 
 # Convert TF-IDF matrix into a new data frame for further analysis.
 tf_idf_df <- as.data.frame(tf_idf)
 
 # Make it into csv for further analysis & supervised learning.
-write.csv(tf_idf_df, "toxicity_lev.csv")
+write.csv(tf_idf_df, "toxic_lev.csv")
+
+
+# Assess Toxic level of each offender's chatlog
+# Append a new column 'toxic_level' is chatlog.
+chatlogs$toxic_score <- 0
+
+for(i in 1:nrow(chatlogs)) {
+  tlv <- 0 # Toxic Level for current chatlog
+  message <- chatlogs$message[i]
+  terms <- unlist(strsplit(message, " "))
+  terms <- trimws(terms) # Trim term
+  for (term in terms) {
+    row_idx <- which(rownames(tf_idf_df) == term)
+    if(!identical(row_idx, integer(0))){
+      weight_row <- tf_idf_df[row_idx, , drop = FALSE]
+      tlv <- tlv + rowSums(weight_row) # Add Weight
+    }
+  }
+  # Apply Weight based on severity.
+  weight <- ifelse(chatlogs$severity[i] == "Normal", 0.6,
+                   ifelse(chatlogs$severity[i] == "Low", 0.3, 1))
+  
+  chatlogs$toxic_score[i] <- round((tlv * weight), 2)
+}
+
+res_log <- chatlogs[, c("X", "message", "most_common_report_reason", "toxic_score")]
+write.csv(res_log, "offender_chatlog_with_toxic_score.csv")
+
+
+
