@@ -6,6 +6,8 @@
 
 library(dplyr) # R Package: dplyr - advanced filtering and selection
 library(tm) # R Package: tm - Text Mining/Merging for preprocess of TF-IDF, and TF-IDF itself
+library(wordcloud) # R Package: Used for visulaization of TF-IDF Result
+library(ggplot2) # R Package: Used for visualization of relationship between #case reports and toxic scores.
 
 setwd("~/Desktop/Dev/HYU/2023-02/AI-X/project/gamechatban") # Change this value to your working dir.
 
@@ -97,6 +99,8 @@ tf_idf_df <- as.data.frame(tf_idf)
 # Make it into csv for further analysis & supervised learning.
 write.csv(tf_idf_df, "toxic_lev.csv")
 
+# Extract terms and their total TF-IDF scores
+term_scores <- data.frame(term = rownames(tf_idf_df), total_tfidf = rowSums(tf_idf_df))
 
 # Assess Toxic level of each offender's chatlog
 # Append a new column 'toxic_level' is chatlog.
@@ -105,13 +109,13 @@ chatlogs$toxic_score <- 0
 for(i in 1:nrow(chatlogs)) {
   tlv <- 0 # Toxic Level for current chatlog
   message <- chatlogs$message[i]
-  terms <- unlist(strsplit(message, " "))
+  terms <- unlist(strsplit(message, " ")) # Split the message into terms.
   terms <- trimws(terms) # Trim term
   for (term in terms) {
-    row_idx <- which(rownames(tf_idf_df) == term)
-    if(!identical(row_idx, integer(0))){
-      weight_row <- tf_idf_df[row_idx, , drop = FALSE]
-      tlv <- tlv + rowSums(weight_row) # Add Weight
+    found <- term_scores$total_tfidf[term_scores$term == term] # Find such terms in term scores
+    head(found)
+    if(!identical(found,numeric(0))){ # if such term exists, 
+      tlv <- tlv + found # Add the term score. 
     }
   }
   # Apply Weight based on severity.
@@ -121,8 +125,23 @@ for(i in 1:nrow(chatlogs)) {
   chatlogs$toxic_score[i] <- round((tlv * weight), 2)
 }
 
-res_log <- chatlogs[, c("X", "message", "most_common_report_reason", "toxic_score")]
+res_log <- chatlogs[, c("message", "most_common_report_reason", "toxic_score")]
 write.csv(res_log, "offender_chatlog_with_toxic_score.csv")
+
+#Visualization
+
+# 1. Word Cloud -> Shows visualized output of tf-idf
+wordcloud(words = term_scores$term, freq = term_scores$total_tfidf, min.freq = 1, scale=c(3,0.5), colors=brewer.pal(8, "Dark2"))
+
+# 2. Scatter plot -> Shows the relationship between severity and number of reports, and resulting toxic score
+ggplot(chatlogs, aes(x = case_total_reports, y = toxic_score, color = severity)) +
+  geom_point() +
+  labs(title = "Scatter Plot of Case Reports vs Toxic Scores",
+       x = "Number of Case Reports",
+       y = "Toxic Score",
+       color = "Severity") +
+  theme_minimal()
+
 
 
 
